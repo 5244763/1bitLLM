@@ -1,0 +1,145 @@
+package com.example.onbitllm.engine
+
+import android.content.Context
+import com.example.onbitllm.model.LlmModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * LlamaEngine のライフサイクル管理クラス
+ *
+ * Sprint 5:
+ * - 初回メッセージ送信時にモデルをロード（遅延ロード）
+ * - モデル切り替え時: 旧モデルをアンロード → 新モデルをロード
+ * - アプリがバックグラウンドに移行したらアンロード、フォアグラウンド復帰でリロード
+ * - モデルファイルが存在しない場合は MockLlamaEngine で動作
+ *
+ * モデルファイルのパス:
+ *   {filesDir}/models/bonsai-8b-q1_0.gguf
+ *   {filesDir}/models/gemma-4-e4b-q4_k_m.gguf
+ */
+class EngineManager(private val context: Context) {
+
+    private val engine: LlamaEngine = LlamaBridge()
+    private var currentModel: LlmModel? = null
+    private var lastLoadedModelPath: String? = null
+
+    companion object {
+        /** Bonsai-8B モデルファイル名 */
+        const val BONSAI_FILE = "bonsai-8b-q1_0.gguf"
+
+        /** Gemma 4 E4B モデルファイル名 */
+        const val GEMMA_FILE = "gemma-4-e4b-q4_k_m.gguf"
+    }
+
+    /**
+     * モデルファイルの保存ディレクトリ (アプリ内部ストレージ)
+     */
+    private val modelsDir: File
+        get() = File(context.filesDir, "models")
+
+    /**
+     * 指定モデルの GGUF ファイルパスを返す。
+     */
+    fun getModelPath(model: LlmModel): String {
+        val fileName = when (model) {
+            LlmModel.BONSAI_8B -> BONSAI_FILE
+            LlmModel.GEMMA_4_E4B -> GEMMA_FILE
+        }
+        return File(modelsDir, fileName).absolutePath
+    }
+
+    /**
+     * 指定モデルのファイルが端末上に存在するか確認する。
+     */
+    fun isModelFilePresent(model: LlmModel): Boolean {
+        return File(getModelPath(model)).exists()
+    }
+
+    /**
+     * 指定モデルをロードする（必要なら既存モデルを先にアンロード）。
+     *
+     * @param model ロード対象のモデル
+     * @return ロード成功なら true（ファイルが存在しない場合でも MockLlamaEngine で true）
+     */
+    suspend fun loadModelIfNeeded(model: LlmModel): Boolean = withContext(Dispatchers.IO) {
+        // 同じモデルが既にロード済みならスキップ
+        if (currentModel == model && engine.isModelLoaded()) {
+            return@withContext true
+        }
+
+        // 旧モデルをアンロード
+        if (engine.isModelLoaded()) {
+            engine.unloadModel()
+        }
+
+        val path = getModelPath(model)
+        currentModel = model
+        lastLoadedModelPath = path
+
+        // ファイルが存在しない場合: MockLlamaEngine（LlamaBridge経由）がパスを記録して動作する
+        engine.loadModel(path)
+    }
+
+    /**
+     * 現在ロードされているモデルをアンロードする。
+     * バックグラウンド移行時に呼び出す。
+     */
+    suspend fun unloadCurrentModel() = withContext(Dispatchers.IO) {
+        if (engine.isModelLoaded()) {
+            engine.unloadModel()
+        }
+    }
+
+    /**
+     * 前回ロードしていたモデルを再ロードする。
+     * フォアグラウンド復帰時に呼び出す。
+     */
+    suspend fun reloadLastModel() = withContext(Dispatchers.IO) {
+        val model = currentModel ?: return@withContext
+        if (!engine.isModelLoaded()) {
+            val path = getModelPath(model)
+            engine.loadModel(path)
+        }
+    }
+
+    /**
+     * テキスト推論を実行する。
+     * モデルが未ロードの場合は loadModelIfNeeded を先に呼ぶこと。
+     */
+    suspend fun generate(
+        prompt: String,
+        maxTokens: Int = 512,
+        callback: (String) -> Unit = {}
+    ): String {
+        return engine.generate(prompt, maxTokens, callback)
+    }
+
+    /**
+     * 画像付き推論を実行する（Gemma 4 E4B 向け）。
+     */
+    suspend fun generateWithImage(
+        prompt: String,
+        imagePath: String,
+        maxTokens: Int = 512,
+        callback: (String) -> Unit = {}
+    ): String {
+        return engine.generateWithImage(prompt, imagePath, maxTokens, callback)
+    }
+
+    /**
+     * 推論エンジンへの参照を返す（ResourceViewModel からメモリ量取得に使用）。
+     */
+    fun getEngine(): LlamaEngine = engine
+
+    /**
+     * 現在選択されているモデルを返す。
+     */
+    fun getCurrentModel(): LlmModel? = currentModel
+
+    /**
+     * モデルがロード済みかを返す。
+     */
+    fun isLoaded(): Boolean = engine.isModelLoaded()
+}
