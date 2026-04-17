@@ -100,7 +100,7 @@ class ChatViewModel(
 
         if (lastSession != null) {
             val messages = repository.fromJsonMessages(lastSession.messages)
-            val model = LlmModel.values().firstOrNull { it.displayName == lastSession.modelName }
+            val model = LlmModel.entries.firstOrNull { it.displayName == lastSession.modelName }
                 ?: LlmModel.BONSAI_8B
             _uiState.update {
                 it.copy(
@@ -172,6 +172,7 @@ class ChatViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             engineManager.unloadCurrentModel()
+            repository.saveCurrentSessionId("")
         }
 
         _uiState.update {
@@ -196,7 +197,7 @@ class ChatViewModel(
         viewModelScope.launch {
             val session = repository.loadSession(sessionId) ?: return@launch
             val messages = repository.fromJsonMessages(session.messages)
-            val model = LlmModel.values().firstOrNull { it.displayName == session.modelName }
+            val model = LlmModel.entries.firstOrNull { it.displayName == session.modelName }
                 ?: LlmModel.BONSAI_8B
 
             // モデルが変わる場合はアンロード
@@ -669,7 +670,18 @@ class ChatViewModel(
         if (!engineManager.isLoaded()) {
             _uiState.update { it.copy(isLoadingModel = true) }
         }
-        engineManager.loadModelIfNeeded(model)
+        try {
+            engineManager.loadModelIfNeeded(model)
+        } catch (e: Exception) {
+            _uiState.update { it.copy(isLoadingModel = false) }
+            val errorMsg = ChatMessage(
+                role = MessageRole.ASSISTANT,
+                content = "[Error] モデルのロードに失敗しました: ${e.message}",
+                isStreaming = false
+            )
+            _uiState.update { it.copy(messages = it.messages + errorMsg, isGenerating = false) }
+            return
+        }
         _uiState.update { it.copy(isLoadingModel = false) }
 
         val streamingMessageId = IdGenerator.next()
