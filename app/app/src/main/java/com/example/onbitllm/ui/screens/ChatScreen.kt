@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.example.onbitllm.engine.EngineManager
 import com.example.onbitllm.engine.LlamaBridge
 import com.example.onbitllm.model.LlmModel
 import com.example.onbitllm.ui.components.ChatBubble
@@ -86,6 +87,34 @@ fun ChatScreen(
     var pendingCameraLaunch by remember { mutableStateOf(false) }
 
     // ---- ランチャー定義 ----
+
+    // モデルファイル選択ランチャー（SAF: Storage Access Framework）
+    val modelFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            scope.launch {
+                val model = uiState.selectedModel
+                val fileName = when (model) {
+                    LlmModel.BONSAI_8B -> EngineManager.BONSAI_FILE
+                    LlmModel.GEMMA_4_E4B -> EngineManager.GEMMA_FILE
+                }
+                val modelsDir = File(context.filesDir, "models")
+                modelsDir.mkdirs()
+                val destFile = File(modelsDir, fileName)
+                try {
+                    context.contentResolver.openInputStream(it)?.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    snackbarHostState.showSnackbar("Model loaded: $fileName")
+                } catch (e: Exception) {
+                    snackbarHostState.showSnackbar("Failed: ${e.message}")
+                }
+            }
+        }
+    }
 
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -187,7 +216,10 @@ fun ChatScreen(
                     item {
                         EmptyStateMessage(
                             model = uiState.selectedModel,
-                            context = context
+                            context = context,
+                            onLoadModel = {
+                                modelFileLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+                            }
                         )
                     }
                 }
@@ -320,23 +352,23 @@ private fun createCameraImageUri(context: Context): Uri? {
  * Sprint 5: モデルファイルが存在しない場合は adb push のパスを案内する。
  */
 @Composable
-private fun EmptyStateMessage(model: LlmModel, context: Context) {
+private fun EmptyStateMessage(
+    model: LlmModel,
+    context: Context,
+    onLoadModel: () -> Unit = {}
+) {
     val modelFileName = when (model) {
-        LlmModel.BONSAI_8B -> "bonsai-8b-q1_0.gguf"
-        LlmModel.GEMMA_4_E4B -> "gemma-4-e4b-q4_k_m.gguf"
+        LlmModel.BONSAI_8B -> EngineManager.BONSAI_FILE
+        LlmModel.GEMMA_4_E4B -> EngineManager.GEMMA_FILE
     }
-    // 内部ストレージ（実際のロード先）で確認
     val internalFile = File(File(context.filesDir, "models"), modelFileName)
-    // 外部ストレージ（adb push先）も確認
-    val externalFile = File(File(context.getExternalFilesDir(null), "models"), modelFileName)
-    val modelFileExists = internalFile.exists() || externalFile.exists()
+    val modelFileExists = internalFile.exists()
     val nativeLibAvailable = LlamaBridge.isNativeLibAvailable()
-    val pushPath = "/sdcard/Android/data/${context.packageName}/files/models/$modelFileName"
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 32.dp, vertical = 60.dp),
+            .padding(horizontal = 32.dp, vertical = 48.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -357,12 +389,22 @@ private fun EmptyStateMessage(model: LlmModel, context: Context) {
             )
             if (!modelFileExists) {
                 Text(
-                    text = "Model file not found.\nadb push to:\n$pushPath",
+                    text = "モデルファイルが見つかりません。\nGGUFファイルをダウンロードして\n下のボタンから読み込んでください。",
                     color = TextMuted,
-                    fontSize = 11.sp,
+                    fontSize = 13.sp,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(top = 20.dp)
                 )
+                androidx.compose.material3.Button(
+                    onClick = onLoadModel,
+                    modifier = Modifier.padding(top = 16.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = AccentCyan.copy(alpha = 0.8f),
+                        contentColor = BackgroundDark
+                    )
+                ) {
+                    Text("モデルファイルを選択", fontSize = 14.sp)
+                }
             } else {
                 Text(
                     text = "メッセージを入力してチャットを開始",
@@ -372,13 +414,12 @@ private fun EmptyStateMessage(model: LlmModel, context: Context) {
                     modifier = Modifier.padding(top = 24.dp)
                 )
             }
-            // 診断情報
             Text(
                 text = "Native: ${if (nativeLibAvailable) "ON" else "OFF"} | Model: ${if (modelFileExists) "Found" else "Missing"}",
-                color = TextMuted.copy(alpha = 0.5f),
+                color = TextMuted.copy(alpha = 0.4f),
                 fontSize = 10.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 12.dp)
+                modifier = Modifier.padding(top = 16.dp)
             )
         }
     }
