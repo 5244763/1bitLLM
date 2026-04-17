@@ -162,28 +162,30 @@ Java_com_example_onbitllm_engine_LlamaBridge_nativeGenerate(
     const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
     LOGI("nativeGenerate: maxTokens=%d prompt_len=%zu", maxTokens, strlen(promptStr));
 
+    // JNI文字列をC++ stringにコピーしてから解放（Use-after-free防止）
+    std::string promptCpp(promptStr);
+    env->ReleaseStringUTFChars(prompt, promptStr);
+
     // ----- トークナイズ -----
     const struct llama_vocab *vocab = llama_model_get_vocab(g_model);
-    const int n_prompt_tokens_max = static_cast<int>(strlen(promptStr)) + 10;
+    const int n_prompt_tokens_max = static_cast<int>(promptCpp.size()) + 10;
     std::vector<llama_token> tokens(n_prompt_tokens_max);
     int n_prompt = llama_tokenize(
         vocab,
-        promptStr,
-        static_cast<int32_t>(strlen(promptStr)),
+        promptCpp.c_str(),
+        static_cast<int32_t>(promptCpp.size()),
         tokens.data(),
         n_prompt_tokens_max,
         /*add_special=*/true,
         /*parse_special=*/true
     );
-    env->ReleaseStringUTFChars(prompt, promptStr);
 
     if (n_prompt < 0) {
-        // バッファが足りなければリサイズして再試行
         tokens.resize(-n_prompt);
         n_prompt = llama_tokenize(
             vocab,
-            promptStr,
-            -1,  // 0-terminated
+            promptCpp.c_str(),
+            static_cast<int32_t>(promptCpp.size()),
             tokens.data(),
             static_cast<int32_t>(tokens.size()),
             /*add_special=*/true,

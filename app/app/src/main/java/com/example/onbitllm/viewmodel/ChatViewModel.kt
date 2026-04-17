@@ -186,6 +186,8 @@ class ChatViewModel(
                 recordingElapsedSeconds = 0,
                 audioLevel = 0f,
                 isLoadingModel = false,
+                loadingPhase = "",
+                isCopyingFile = false,
                 currentSessionId = null
             )
         }
@@ -491,7 +493,9 @@ class ChatViewModel(
                 modelFilesMissing = false,
                 missingModelPath = "",
                 isLoadingModel = false,
-                currentSessionId = null  // 新しいセッションとして扱う
+                loadingPhase = "",
+                isCopyingFile = false,
+                currentSessionId = null
             )
         }
     }
