@@ -417,7 +417,7 @@ class ChatViewModel(
             kotlinx.coroutines.withTimeout(120_000L) {
                 engineManager.generate(
                     prompt = buildPrompt(userInput, model),
-                    maxTokens = 512,
+                    maxTokens = 128,
                     callback = streamCallback
                 )
             }
@@ -463,7 +463,18 @@ class ChatViewModel(
      * 現時点ではユーザー入力をそのまま渡す（llama.cpp 統合後にテンプレートを適用する想定）。
      */
     private fun buildPrompt(userInput: String, model: LlmModel): String {
-        return userInput
+        return when (model) {
+            // Bonsai-8B: Qwen3ベース → ChatML形式
+            LlmModel.BONSAI_8B -> """<|im_start|>user
+$userInput<|im_end|>
+<|im_start|>assistant
+"""
+            // Gemma 4 E4B: Gemma形式
+            LlmModel.GEMMA_4_E4B -> """<start_of_turn>user
+$userInput<end_of_turn>
+<start_of_turn>model
+"""
+        }
     }
 
     /**
@@ -774,7 +785,7 @@ class ChatViewModel(
         val fullResponse = engineManager.generateWithImage(
             prompt = buildPrompt(userInput, model),
             imagePath = imagePath,
-            maxTokens = 512,
+            maxTokens = 128,
             callback = streamCallback
         )
 
