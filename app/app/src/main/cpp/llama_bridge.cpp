@@ -32,11 +32,11 @@
 static llama_model   * g_model   = nullptr;
 static llama_context * g_ctx     = nullptr;
 
-// CPU スレッド数（メモリ圧を抑えるため2に制限）
-static constexpr int N_THREADS = 2;
+// CPU スレッド数
+static constexpr int N_THREADS = 4;
 
-// コンテキストサイズ（メモリ節約・速度重視）
-static constexpr int N_CTX = 512;
+// コンテキストサイズ
+static constexpr int N_CTX = 256;
 
 // ----------------------------------------------------------------------------
 // ヘルパー: llama.cpp のログを Android logcat に転送

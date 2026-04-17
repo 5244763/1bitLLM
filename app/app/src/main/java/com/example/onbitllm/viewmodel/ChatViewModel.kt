@@ -417,7 +417,7 @@ class ChatViewModel(
             kotlinx.coroutines.withTimeout(120_000L) {
                 engineManager.generate(
                     prompt = buildPrompt(userInput, model),
-                    maxTokens = 128,
+                    maxTokens = 64,
                     callback = streamCallback
                 )
             }
@@ -785,7 +785,7 @@ $userInput<end_of_turn>
         val fullResponse = engineManager.generateWithImage(
             prompt = buildPrompt(userInput, model),
             imagePath = imagePath,
-            maxTokens = 128,
+            maxTokens = 64,
             callback = streamCallback
         )
 
