@@ -20,9 +20,10 @@ data class ChatMessage(
 
 /**
  * 一意なメッセージIDを生成するカウンター
+ * タイムスタンプ + カウンターで、クラッシュ後の復元でもIDが衝突しない
  */
 object IdGenerator {
-    private val counter = AtomicLong(0)
+    private val counter = AtomicLong(System.currentTimeMillis() * 1000)
     fun next(): Long = counter.incrementAndGet()
 }
 

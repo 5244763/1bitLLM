@@ -32,11 +32,11 @@
 static llama_model   * g_model   = nullptr;
 static llama_context * g_ctx     = nullptr;
 
-// CPU スレッド数（端末の物理コア数の半分程度を使用）
-static constexpr int N_THREADS = 4;
+// CPU スレッド数（メモリ圧を抑えるため2に制限）
+static constexpr int N_THREADS = 2;
 
-// デフォルトのコンテキストサイズ（トークン数）
-static constexpr int N_CTX = 2048;
+// コンテキストサイズ（メモリ節約のため小さめに設定）
+static constexpr int N_CTX = 512;
 
 // ----------------------------------------------------------------------------
 // ヘルパー: llama.cpp のログを Android logcat に転送
@@ -95,7 +95,9 @@ Java_com_example_onbitllm_engine_LlamaBridge_nativeLoadModel(
 
     // モデルパラメータ設定
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = 0;  // CPU のみ
+    model_params.n_gpu_layers = 0;   // CPU のみ
+    model_params.use_mmap    = true; // メモリマップで遅延読み込み（RAM節約）
+    model_params.use_mlock   = false;// RAMにロックしない（OOM防止）
 
     // モデルロード
     g_model = llama_model_load_from_file(path, model_params);
