@@ -271,6 +271,7 @@ fun ChatScreen(
                         EmptyStateMessage(
                             model = uiState.selectedModel,
                             context = context,
+                            isEngineLoaded = viewModel.getEngine()?.isModelLoaded() == true,
                             onLoadModel = {
                                 modelFileLauncher.launch(arrayOf("*/*"))
                             }
@@ -500,21 +501,11 @@ private fun createCameraImageUri(context: Context): Uri? {
 private fun EmptyStateMessage(
     model: LlmModel,
     context: Context,
+    isEngineLoaded: Boolean = false,
     onLoadModel: () -> Unit = {}
 ) {
-    val modelFileName = when (model) {
-        LlmModel.BONSAI_8B -> EngineManager.BONSAI_FILE
-        LlmModel.GEMMA_4_E4B -> EngineManager.GEMMA_FILE
-    }
-    // 複数のパスを確認（adb pushの配置先を含む）
-    val pkg = context.packageName
-    val modelFileExists = listOf(
-        File(context.filesDir, "models/$modelFileName"),
-        File(context.getExternalFilesDir(null) ?: context.filesDir, "models/$modelFileName"),
-        File("/storage/emulated/0/Android/data/$pkg/files/models/$modelFileName"),
-        File("/sdcard/Android/data/$pkg/files/models/$modelFileName")
-    ).any { it.exists() && it.length() > 0 }
-    val nativeLibAvailable = LlamaBridge.isNativeLibAvailable()
+    // エンジンがロード済みならモデルは利用可能
+    val modelReady = isEngineLoaded
 
     Box(
         modifier = Modifier
@@ -538,7 +529,7 @@ private fun EmptyStateMessage(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 8.dp)
             )
-            if (!modelFileExists) {
+            if (!modelReady) {
                 Text(
                     text = "モデルファイルが見つかりません。\nGGUFファイルをダウンロードして\n下のボタンから読み込んでください。",
                     color = TextMuted,
