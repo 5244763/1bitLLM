@@ -72,12 +72,33 @@ class EngineManager(private val context: Context) {
 
     /**
      * 指定モデルの GGUF ファイルパスを返す。
+     * 複数の候補パスを順に探し、最初に見つかったものを返す。
+     * C++ネイティブコード(fopen/mmap)はJavaと異なりファイルアクセス制限が緩いため、
+     * Javaで見えないパスでもネイティブからは開ける可能性がある。
      */
     fun getModelPath(model: LlmModel): String {
         val fileName = when (model) {
             LlmModel.BONSAI_8B -> BONSAI_FILE
             LlmModel.GEMMA_4_E4B -> GEMMA_FILE
         }
+
+        // 候補パスを優先度順に列挙
+        val candidates = listOf(
+            File(internalModelsDir, fileName),                                     // 内部ストレージ
+            File(externalModelsDir, fileName),                                     // 外部ストレージ (getExternalFilesDir)
+            File("/storage/emulated/0/Android/data/${context.packageName}/files/models", fileName), // 直接パス
+            File("/sdcard/Android/data/${context.packageName}/files/models", fileName),             // symlink パス
+        )
+
+        for (candidate in candidates) {
+            if (candidate.exists() && candidate.length() > 0) {
+                android.util.Log.i("EngineManager", "getModelPath: found at ${candidate.absolutePath} (${candidate.length() / 1024 / 1024}MB)")
+                return candidate.absolutePath
+            }
+        }
+
+        // どこにも見つからない場合は内部ストレージのパスを返す（エラーになるが呼び出し側で処理）
+        android.util.Log.e("EngineManager", "getModelPath: not found in any location for $fileName")
         return File(internalModelsDir, fileName).absolutePath
     }
 

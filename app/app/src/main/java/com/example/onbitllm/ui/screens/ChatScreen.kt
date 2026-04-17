@@ -506,8 +506,14 @@ private fun EmptyStateMessage(
         LlmModel.BONSAI_8B -> EngineManager.BONSAI_FILE
         LlmModel.GEMMA_4_E4B -> EngineManager.GEMMA_FILE
     }
-    val internalFile = File(File(context.filesDir, "models"), modelFileName)
-    val modelFileExists = internalFile.exists()
+    // 複数のパスを確認（adb pushの配置先を含む）
+    val pkg = context.packageName
+    val modelFileExists = listOf(
+        File(context.filesDir, "models/$modelFileName"),
+        File(context.getExternalFilesDir(null) ?: context.filesDir, "models/$modelFileName"),
+        File("/storage/emulated/0/Android/data/$pkg/files/models/$modelFileName"),
+        File("/sdcard/Android/data/$pkg/files/models/$modelFileName")
+    ).any { it.exists() && it.length() > 0 }
     val nativeLibAvailable = LlamaBridge.isNativeLibAvailable()
 
     Box(
