@@ -11,6 +11,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModelProvider
+import com.example.onbitllm.engine.EngineManager
 import com.example.onbitllm.ui.screens.ChatScreen
 import com.example.onbitllm.ui.theme.OneBitLLMTheme
 import com.example.onbitllm.viewmodel.ChatViewModel
@@ -31,6 +32,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 外部ストレージ(adb push先)から内部ストレージへモデルファイルを同期
+        val engineManager = EngineManager(applicationContext)
+        Thread { engineManager.syncModelsFromExternal() }.start()
 
         // ChatViewModel を Factory 経由で生成（Context注入のため）
         chatViewModel = ViewModelProvider(

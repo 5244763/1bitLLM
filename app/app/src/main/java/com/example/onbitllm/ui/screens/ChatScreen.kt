@@ -321,14 +321,17 @@ private fun createCameraImageUri(context: Context): Uri? {
  */
 @Composable
 private fun EmptyStateMessage(model: LlmModel, context: Context) {
-    val modelsDir = File(context.getExternalFilesDir(null), "models")
     val modelFileName = when (model) {
         LlmModel.BONSAI_8B -> "bonsai-8b-q1_0.gguf"
         LlmModel.GEMMA_4_E4B -> "gemma-4-e4b-q4_k_m.gguf"
     }
-    val modelFilePath = File(modelsDir, modelFileName).absolutePath
-    val modelFileExists = File(modelsDir, modelFileName).exists()
+    // 内部ストレージ（実際のロード先）で確認
+    val internalFile = File(File(context.filesDir, "models"), modelFileName)
+    // 外部ストレージ（adb push先）も確認
+    val externalFile = File(File(context.getExternalFilesDir(null), "models"), modelFileName)
+    val modelFileExists = internalFile.exists() || externalFile.exists()
     val nativeLibAvailable = LlamaBridge.isNativeLibAvailable()
+    val pushPath = "/sdcard/Android/data/${context.packageName}/files/models/$modelFileName"
 
     Box(
         modifier = Modifier
@@ -354,7 +357,7 @@ private fun EmptyStateMessage(model: LlmModel, context: Context) {
             )
             if (!modelFileExists) {
                 Text(
-                    text = "Model file not found.\nPlace GGUF file at:\n$modelFilePath",
+                    text = "Model file not found.\nadb push to:\n$pushPath",
                     color = TextMuted,
                     fontSize = 11.sp,
                     textAlign = TextAlign.Center,

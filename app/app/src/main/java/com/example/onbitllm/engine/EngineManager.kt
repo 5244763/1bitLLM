@@ -34,15 +34,41 @@ class EngineManager(private val context: Context) {
     }
 
     /**
-     * モデルファイルの保存ディレクトリ (アプリ外部ストレージ: adb push で直接書き込み可能)
-     * パス: /sdcard/Android/data/com.example.onbitllm/files/models/
+     * モデルファイルの保存ディレクトリ（内部ストレージ: アプリが確実にアクセス可能）
      */
-    private val modelsDir: File
+    private val internalModelsDir: File
+        get() {
+            val dir = File(context.filesDir, "models")
+            if (!dir.exists()) dir.mkdirs()
+            return dir
+        }
+
+    /**
+     * adb push 先のディレクトリ（外部ストレージ）
+     * ユーザーはここにモデルファイルを配置する
+     */
+    private val externalModelsDir: File
         get() {
             val dir = File(context.getExternalFilesDir(null), "models")
             if (!dir.exists()) dir.mkdirs()
             return dir
         }
+
+    /**
+     * 外部ストレージにモデルファイルがあれば内部ストレージにコピーする。
+     * adb push → 外部、アプリ利用 → 内部 のブリッジ。
+     */
+    fun syncModelsFromExternal() {
+        val files = externalModelsDir.listFiles() ?: return
+        for (file in files) {
+            if (file.extension == "gguf") {
+                val dest = File(internalModelsDir, file.name)
+                if (!dest.exists() || dest.length() != file.length()) {
+                    file.copyTo(dest, overwrite = true)
+                }
+            }
+        }
+    }
 
     /**
      * 指定モデルの GGUF ファイルパスを返す。
@@ -52,7 +78,18 @@ class EngineManager(private val context: Context) {
             LlmModel.BONSAI_8B -> BONSAI_FILE
             LlmModel.GEMMA_4_E4B -> GEMMA_FILE
         }
-        return File(modelsDir, fileName).absolutePath
+        return File(internalModelsDir, fileName).absolutePath
+    }
+
+    /**
+     * adb push 先のパスを返す（UI案内用）。
+     */
+    fun getExternalModelPath(model: LlmModel): String {
+        val fileName = when (model) {
+            LlmModel.BONSAI_8B -> BONSAI_FILE
+            LlmModel.GEMMA_4_E4B -> GEMMA_FILE
+        }
+        return File(externalModelsDir, fileName).absolutePath
     }
 
     /**
