@@ -218,7 +218,7 @@ fun ChatScreen(
                             model = uiState.selectedModel,
                             context = context,
                             onLoadModel = {
-                                modelFileLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+                                modelFileLauncher.launch(arrayOf("*/*"))
                             }
                         )
                     }
