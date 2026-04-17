@@ -125,6 +125,34 @@ class EngineManager(private val context: Context) {
     }
 
     /**
+     * モデルを強制的にアンロード→再ロードする。
+     * ファイルコピー後の初回ロードに使用。loadModelIfNeeded のキャッシュをバイパスする。
+     */
+    suspend fun forceLoadModel(model: LlmModel): Boolean = withContext(Dispatchers.IO) {
+        // 既存モデルを確実にアンロード
+        engine.unloadModel()
+
+        val path = getModelPath(model)
+        currentModel = model
+        lastLoadedModelPath = path
+
+        // ファイル存在確認
+        val file = java.io.File(path)
+        if (!file.exists()) {
+            android.util.Log.e("EngineManager", "forceLoadModel: file not found: $path")
+            return@withContext false
+        }
+        android.util.Log.i("EngineManager", "forceLoadModel: loading ${file.length() / 1024 / 1024}MB from $path")
+
+        val startTime = System.currentTimeMillis()
+        val result = engine.loadModel(path)
+        val elapsed = System.currentTimeMillis() - startTime
+        android.util.Log.i("EngineManager", "forceLoadModel: result=$result, elapsed=${elapsed}ms, native=${isNativeInference()}")
+
+        result
+    }
+
+    /**
      * 現在ロードされているモデルをアンロードする。
      * バックグラウンド移行時に呼び出す。
      */

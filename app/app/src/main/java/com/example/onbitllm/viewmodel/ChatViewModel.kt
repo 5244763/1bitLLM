@@ -294,14 +294,15 @@ class ChatViewModel(
      * @return ロード成功なら true
      */
     /**
-     * ファイルコピー後にモデルをメモリにロードする。
+     * ファイルコピー後にモデルをメモリに強制ロードする。
+     * loadModelIfNeeded ではなく forceLoadModel を使い、キャッシュをバイパスする。
      * @return "native" = ネイティブ推論準備完了, "mock" = モックフォールバック, "error" = 失敗
      */
     suspend fun loadModelAfterCopy(): String {
         onModelLoadStart()
         return try {
             val model = _uiState.value.selectedModel
-            val loadResult = engineManager.loadModelIfNeeded(model)
+            val loadResult = engineManager.forceLoadModel(model)
             if (!loadResult) {
                 "error"
             } else if (engineManager.isNativeInference()) {
@@ -310,7 +311,7 @@ class ChatViewModel(
                 "mock"
             }
         } catch (e: Exception) {
-            "error"
+            "error: ${e.message}"
         } finally {
             onModelLoadEnd()
         }

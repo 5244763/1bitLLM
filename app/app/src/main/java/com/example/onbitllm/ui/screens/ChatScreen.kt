@@ -120,12 +120,20 @@ fun ChatScreen(
                 modelsDir.mkdirs()
                 val destFile = File(modelsDir, fileName)
 
-                // フェーズ1: ファイルコピー
+                // フェーズ1: ファイルコピー（IOスレッドで実行）
                 viewModel.onFileCopyStart()
-                try {
-                    context.contentResolver.openInputStream(it)?.use { input ->
-                        destFile.outputStream().use { output ->
-                            input.copyTo(output)
+                val copySuccess = try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val input = context.contentResolver.openInputStream(it)
+                        if (input == null) {
+                            false
+                        } else {
+                            input.use { ins ->
+                                destFile.outputStream().use { out ->
+                                    ins.copyTo(out, bufferSize = 8192)
+                                }
+                            }
+                            true
                         }
                     }
                 } catch (e: Exception) {
@@ -134,14 +142,28 @@ fun ChatScreen(
                     return@launch
                 }
 
-                // フェーズ2: モデルをメモリにロード（loadingPhase = "loading" に切り替わる）
+                if (!copySuccess) {
+                    viewModel.onModelLoadEnd()
+                    snackbarHostState.showSnackbar("error:ファイルを開けませんでした")
+                    return@launch
+                }
+
+                // コピー結果の検証
+                val fileSizeMb = destFile.length() / 1024 / 1024
+                if (fileSizeMb < 10) {
+                    viewModel.onModelLoadEnd()
+                    snackbarHostState.showSnackbar("error:コピーされたファイルが小さすぎます (${fileSizeMb}MB)")
+                    return@launch
+                }
+
+                // フェーズ2: モデルをメモリに強制ロード
                 viewModel.onFileCopyEnd()
                 val loadResult = viewModel.loadModelAfterCopy()
 
-                when (loadResult) {
-                    "native" -> snackbarHostState.showSnackbar("success:モデル準備完了！（ネイティブ推論）")
-                    "mock" -> snackbarHostState.showSnackbar("error:ネイティブロード失敗。デモモードで動作します。ファイル形式を確認してください。")
-                    else -> snackbarHostState.showSnackbar("error:モデルのロードに失敗しました")
+                when {
+                    loadResult == "native" -> snackbarHostState.showSnackbar("success:モデル準備完了！（${fileSizeMb}MB ネイティブ推論）")
+                    loadResult == "mock" -> snackbarHostState.showSnackbar("error:ネイティブロード失敗（${fileSizeMb}MB）。デモモードで動作します。")
+                    else -> snackbarHostState.showSnackbar("error:ロード失敗: $loadResult")
                 }
             }
         }
