@@ -119,6 +119,8 @@ fun ChatScreen(
                 val modelsDir = File(context.filesDir, "models")
                 modelsDir.mkdirs()
                 val destFile = File(modelsDir, fileName)
+
+                // フェーズ1: ファイルコピー
                 viewModel.onFileCopyStart()
                 try {
                     context.contentResolver.openInputStream(it)?.use { input ->
@@ -126,11 +128,20 @@ fun ChatScreen(
                             input.copyTo(output)
                         }
                     }
-                    viewModel.onFileCopyEnd()
-                    snackbarHostState.showSnackbar("success:Model loaded: $fileName")
                 } catch (e: Exception) {
-                    viewModel.onFileCopyEnd()
-                    snackbarHostState.showSnackbar("error:Failed: ${e.message}")
+                    viewModel.onModelLoadEnd()
+                    snackbarHostState.showSnackbar("error:コピー失敗: ${e.message}")
+                    return@launch
+                }
+
+                // フェーズ2: モデルをメモリにロード（loadingPhase = "loading" に切り替わる）
+                viewModel.onFileCopyEnd()
+                val loadOk = viewModel.loadModelAfterCopy()
+
+                if (loadOk) {
+                    snackbarHostState.showSnackbar("success:モデル準備完了！チャットを開始できます")
+                } else {
+                    snackbarHostState.showSnackbar("error:モデルのロードに失敗しました")
                 }
             }
         }
@@ -298,7 +309,8 @@ fun ChatScreen(
                             onImageClick = { showImageSourceSheet = true },
                             onMicClick = {
                                 micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            }
+                            },
+                            enabled = uiState.loadingPhase.isEmpty()
                         )
                     }
                 }
@@ -373,13 +385,27 @@ fun ChatScreen(
             )
         }
 
-        // ファイルコピー中ダイアログ
-        if (uiState.isCopyingFile) {
+        // ファイルコピー中 / モデルロード中ダイアログ（キャンセル不可）
+        if (uiState.loadingPhase == "copying" || uiState.loadingPhase == "loading") {
+            val dialogTitle = when (uiState.loadingPhase) {
+                "copying" -> "ファイルをコピー中..."
+                "loading" -> "モデルを読み込み中..."
+                else -> ""
+            }
+            val dialogBody = when (uiState.loadingPhase) {
+                "copying" -> "しばらくお待ちください"
+                "loading" -> "これには数十秒かかります"
+                else -> ""
+            }
             AlertDialog(
                 onDismissRequest = { /* キャンセル不可 */ },
+                properties = androidx.compose.ui.window.DialogProperties(
+                    dismissOnBackPress = false,
+                    dismissOnClickOutside = false
+                ),
                 title = {
                     Text(
-                        text = "モデルファイルをコピー中...",
+                        text = dialogTitle,
                         color = Color(0xFFEEEEFF)
                     )
                 },
@@ -394,7 +420,7 @@ fun ChatScreen(
                             strokeWidth = 3.dp
                         )
                         Text(
-                            text = "しばらくお待ちください",
+                            text = dialogBody,
                             color = Color(0xFFAAAAAA),
                             fontSize = 13.sp
                         )

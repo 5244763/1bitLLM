@@ -42,8 +42,10 @@ data class ChatUiState(
     val missingModelPath: String = "",
     // Sprint 7: モデルロード中フラグ
     val isLoadingModel: Boolean = false,
-    // Sprint 7: ファイルコピー中フラグ
+    // Sprint 7: ファイルコピー中フラグ（後方互換用 — loadingPhase で統合）
     val isCopyingFile: Boolean = false,
+    // 緊急修正: ロードフェーズ管理 ("" = 待機中, "copying" = コピー中, "loading" = メモリロード中)
+    val loadingPhase: String = "",
     // Sprint 7: セッション管理
     val currentSessionId: String? = null,
     val allSessions: List<ChatSession> = emptyList()
@@ -253,21 +255,52 @@ class ChatViewModel(
     }
 
     // -------------------------------------------------------------------------
-    // ファイルコピー中フラグの管理
+    // ファイルコピー・モデルロードフェーズ管理
     // -------------------------------------------------------------------------
 
     /**
      * ファイルコピー開始を通知
      */
     fun onFileCopyStart() {
-        _uiState.update { it.copy(isCopyingFile = true) }
+        _uiState.update { it.copy(isCopyingFile = true, loadingPhase = "copying") }
     }
 
     /**
-     * ファイルコピー完了を通知
+     * ファイルコピー完了を通知（モデルロード開始前）
      */
     fun onFileCopyEnd() {
-        _uiState.update { it.copy(isCopyingFile = false) }
+        _uiState.update { it.copy(isCopyingFile = false, loadingPhase = "loading") }
+    }
+
+    /**
+     * モデルのメモリロード開始を通知
+     */
+    fun onModelLoadStart() {
+        _uiState.update { it.copy(loadingPhase = "loading") }
+    }
+
+    /**
+     * モデルのメモリロード完了を通知（成功・失敗どちらも）
+     */
+    fun onModelLoadEnd() {
+        _uiState.update { it.copy(loadingPhase = "", isCopyingFile = false) }
+    }
+
+    /**
+     * EngineManager.loadModelIfNeeded() をUIから呼び出す際のラッパー。
+     * コピー完了後にメモリへのロードを行い、loadingPhase を管理する。
+     * @return ロード成功なら true
+     */
+    suspend fun loadModelAfterCopy(): Boolean {
+        onModelLoadStart()
+        return try {
+            val model = _uiState.value.selectedModel
+            engineManager.loadModelIfNeeded(model)
+        } catch (e: Exception) {
+            false
+        } finally {
+            onModelLoadEnd()
+        }
     }
 
     // -------------------------------------------------------------------------

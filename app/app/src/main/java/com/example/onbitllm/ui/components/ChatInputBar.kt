@@ -51,6 +51,7 @@ import com.example.onbitllm.ui.theme.TextPrimary
  * @param selectedModel  現在選択中のモデル
  * @param onImageClick   画像ボタンタップコールバック（Gemma時のみ表示）
  * @param onMicClick     マイクボタンタップコールバック（Gemma時のみ表示）
+ * @param enabled        false のときは入力全体を無効化（モデルロード中などに使用）
  */
 @Composable
 fun ChatInputBar(
@@ -61,10 +62,11 @@ fun ChatInputBar(
     selectedModel: LlmModel = LlmModel.BONSAI_8B,
     onImageClick: () -> Unit = {},
     onMicClick: () -> Unit = {},
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val isMultimodal = selectedModel.supportsMultimodal
-    val canSend = inputText.isNotBlank() && !isGenerating
+    val canSend = inputText.isNotBlank() && !isGenerating && enabled
 
     Row(
         modifier = modifier
@@ -77,7 +79,7 @@ fun ChatInputBar(
         if (isMultimodal) {
             IconButton(
                 onClick = onImageClick,
-                enabled = !isGenerating,
+                enabled = !isGenerating && enabled,
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
@@ -86,7 +88,7 @@ fun ChatInputBar(
                 Icon(
                     imageVector = Icons.Default.Image,
                     contentDescription = "画像を添付",
-                    tint = if (isGenerating) TextMuted else AccentCyan,
+                    tint = if (!enabled || isGenerating) TextMuted else AccentCyan,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -96,7 +98,7 @@ fun ChatInputBar(
             // Gemma 時: マイクボタン
             IconButton(
                 onClick = onMicClick,
-                enabled = !isGenerating,
+                enabled = !isGenerating && enabled,
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
@@ -105,7 +107,7 @@ fun ChatInputBar(
                 Icon(
                     imageVector = Icons.Default.Mic,
                     contentDescription = "音声入力",
-                    tint = if (isGenerating) TextMuted else AccentPurpleLight,
+                    tint = if (!enabled || isGenerating) TextMuted else AccentPurpleLight,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -118,20 +120,21 @@ fun ChatInputBar(
             modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(24.dp))
-                .background(InputBackground)
+                .background(if (enabled) InputBackground else InputBackground.copy(alpha = 0.5f))
                 .border(
                     width = 1.dp,
-                    color = InputBorder,
+                    color = if (enabled) InputBorder else InputBorder.copy(alpha = 0.3f),
                     shape = RoundedCornerShape(24.dp)
                 )
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             BasicTextField(
                 value = inputText,
-                onValueChange = onInputChange,
+                onValueChange = { if (enabled) onInputChange(it) },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
                 textStyle = TextStyle(
-                    color = TextPrimary,
+                    color = if (enabled) TextPrimary else TextMuted,
                     fontSize = 15.sp,
                     lineHeight = 22.sp
                 ),
@@ -146,7 +149,9 @@ fun ChatInputBar(
                 decorationBox = { innerTextField ->
                     if (inputText.isEmpty()) {
                         Text(
-                            text = if (isMultimodal) "Gemmaに質問する..." else "メッセージを入力...",
+                            text = if (!enabled) "モデルを読み込み中..."
+                                   else if (isMultimodal) "Gemmaに質問する..."
+                                   else "メッセージを入力...",
                             color = TextMuted,
                             fontSize = 15.sp
                         )
