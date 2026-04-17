@@ -565,13 +565,6 @@ private fun EmptyStateMessage(
                     modifier = Modifier.padding(top = 24.dp)
                 )
             }
-            Text(
-                text = "Native: ${if (nativeLibAvailable) "ON" else "OFF"} | Model: ${if (modelFileExists) "Found" else "Missing"}",
-                color = TextMuted.copy(alpha = 0.4f),
-                fontSize = 10.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 16.dp)
-            )
         }
     }
 }
