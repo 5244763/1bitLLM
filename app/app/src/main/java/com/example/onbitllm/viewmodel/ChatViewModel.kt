@@ -166,14 +166,13 @@ class ChatViewModel(
      * 新しいセッションを作成（「新しい会話」ボタン）
      */
     fun createNewSession() {
+        // 推論中の場合は完了を待たずにUI状態のみリセット
+        // モデルのアンロードは推論完了後に安全に行う
+        val wasGenerating = _uiState.value.isGenerating
+
         recordingTimerJob?.cancel()
         recordingTimerJob = null
         stopAudioRecord()
-
-        viewModelScope.launch(Dispatchers.IO) {
-            engineManager.unloadCurrentModel()
-            repository.saveCurrentSessionId("")
-        }
 
         _uiState.update {
             it.copy(
@@ -187,6 +186,15 @@ class ChatViewModel(
                 isLoadingModel = false,
                 currentSessionId = null
             )
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // 推論中だった場合は少し待ってからアンロード
+            if (wasGenerating) kotlinx.coroutines.delay(2000L)
+            if (!_uiState.value.isGenerating) {
+                engineManager.unloadCurrentModel()
+            }
+            repository.saveCurrentSessionId("")
         }
     }
 
@@ -460,7 +468,9 @@ class ChatViewModel(
      * MainActivity から呼び出す（ON_STOP）。
      */
     fun onAppBackground() {
-        viewModelScope.launch {
+        // 推論中はアンロードしない（ネイティブ側でクラッシュするため）
+        if (_uiState.value.isGenerating) return
+        viewModelScope.launch(Dispatchers.IO) {
             engineManager.unloadCurrentModel()
         }
     }
@@ -470,7 +480,8 @@ class ChatViewModel(
      * MainActivity から呼び出す（ON_START）。
      */
     fun onAppForeground() {
-        viewModelScope.launch {
+        if (_uiState.value.isGenerating) return
+        viewModelScope.launch(Dispatchers.IO) {
             engineManager.reloadLastModel()
         }
     }
