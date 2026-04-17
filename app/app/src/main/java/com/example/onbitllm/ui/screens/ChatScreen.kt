@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.example.onbitllm.engine.LlamaBridge
 import com.example.onbitllm.model.LlmModel
 import com.example.onbitllm.ui.components.ChatBubble
 import com.example.onbitllm.ui.components.ChatHeader
@@ -320,13 +321,14 @@ private fun createCameraImageUri(context: Context): Uri? {
  */
 @Composable
 private fun EmptyStateMessage(model: LlmModel, context: Context) {
-    val modelsDir = "${context.filesDir.absolutePath}/models"
+    val modelsDir = File(context.getExternalFilesDir(null), "models")
     val modelFileName = when (model) {
         LlmModel.BONSAI_8B -> "bonsai-8b-q1_0.gguf"
         LlmModel.GEMMA_4_E4B -> "gemma-4-e4b-q4_k_m.gguf"
     }
-    val modelFilePath = "$modelsDir/$modelFileName"
-    val modelFileExists = java.io.File(modelFilePath).exists()
+    val modelFilePath = File(modelsDir, modelFileName).absolutePath
+    val modelFileExists = File(modelsDir, modelFileName).exists()
+    val nativeLibAvailable = LlamaBridge.isNativeLibAvailable()
 
     Box(
         modifier = Modifier
@@ -351,9 +353,8 @@ private fun EmptyStateMessage(model: LlmModel, context: Context) {
                 modifier = Modifier.padding(top = 8.dp)
             )
             if (!modelFileExists) {
-                // モデルファイルが存在しない場合: adb push 手順を案内
                 Text(
-                    text = "モデルファイルが見つかりません。\n以下のパスにGGUFファイルを配置してください:\n$modelsDir/$modelFileName\n\n例: adb push $modelFileName $modelsDir/$modelFileName\n\n現在はモック応答モードで動作します。",
+                    text = "Model file not found.\nPlace GGUF file at:\n$modelFilePath",
                     color = TextMuted,
                     fontSize = 11.sp,
                     textAlign = TextAlign.Center,
@@ -368,6 +369,14 @@ private fun EmptyStateMessage(model: LlmModel, context: Context) {
                     modifier = Modifier.padding(top = 24.dp)
                 )
             }
+            // 診断情報
+            Text(
+                text = "Native: ${if (nativeLibAvailable) "ON" else "OFF"} | Model: ${if (modelFileExists) "Found" else "Missing"}",
+                color = TextMuted.copy(alpha = 0.5f),
+                fontSize = 10.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 12.dp)
+            )
         }
     }
 }
