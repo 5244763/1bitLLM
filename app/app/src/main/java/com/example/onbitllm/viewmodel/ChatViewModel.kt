@@ -101,8 +101,19 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
     private suspend fun generateResponse(userInput: String, model: LlmModel) {
         val startTime = System.currentTimeMillis()
 
-        // モデルが未ロードなら遅延ロード
-        engineManager.loadModelIfNeeded(model)
+        try {
+            // モデルが未ロードなら遅延ロード
+            engineManager.loadModelIfNeeded(model)
+        } catch (e: Exception) {
+            // ロード失敗: エラーメッセージを表示して終了
+            val errorMsg = ChatMessage(
+                role = MessageRole.ASSISTANT,
+                content = "[Error] モデルのロードに失敗しました: ${e.message}\nモック応答モードで動作します。",
+                isStreaming = false
+            )
+            _uiState.update { it.copy(messages = it.messages + errorMsg, isGenerating = false) }
+            return
+        }
 
         // ストリーミング用プレースホルダーメッセージを追加
         val streamingMessageId = IdGenerator.next()
@@ -134,12 +145,19 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
             }
         }
 
-        // 推論実行（EngineManager 経由）
-        val fullResponse = engineManager.generate(
-            prompt = buildPrompt(userInput, model),
-            maxTokens = 512,
-            callback = streamCallback
-        )
+        // 推論実行（EngineManager 経由）- タイムアウト付き
+        val fullResponse = try {
+            kotlinx.coroutines.withTimeout(120_000L) {
+                engineManager.generate(
+                    prompt = buildPrompt(userInput, model),
+                    maxTokens = 512,
+                    callback = streamCallback
+                )
+            }
+        } catch (e: Exception) {
+            val errorText = sb.toString().ifEmpty { "[Error] 推論に失敗しました: ${e.message}" }
+            errorText
+        }
 
         // 完了: 応答時間と速度を計算して確定
         val elapsedMs = System.currentTimeMillis() - startTime
