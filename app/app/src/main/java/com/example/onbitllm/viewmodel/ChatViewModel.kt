@@ -293,13 +293,24 @@ class ChatViewModel(
      * コピー完了後にメモリへのロードを行い、loadingPhase を管理する。
      * @return ロード成功なら true
      */
-    suspend fun loadModelAfterCopy(): Boolean {
+    /**
+     * ファイルコピー後にモデルをメモリにロードする。
+     * @return "native" = ネイティブ推論準備完了, "mock" = モックフォールバック, "error" = 失敗
+     */
+    suspend fun loadModelAfterCopy(): String {
         onModelLoadStart()
         return try {
             val model = _uiState.value.selectedModel
-            engineManager.loadModelIfNeeded(model)
+            val loadResult = engineManager.loadModelIfNeeded(model)
+            if (!loadResult) {
+                "error"
+            } else if (engineManager.isNativeInference()) {
+                "native"
+            } else {
+                "mock"
+            }
         } catch (e: Exception) {
-            false
+            "error"
         } finally {
             onModelLoadEnd()
         }

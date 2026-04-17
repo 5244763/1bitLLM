@@ -38,6 +38,9 @@ class LlamaBridge : LlamaEngine {
     /** ネイティブ側でモデルロードに成功したかを追跡 */
     private var useNativeForInference = false
 
+    /** 最後のロード結果がネイティブだったか */
+    fun isUsingNativeInference(): Boolean = useNativeForInference
+
     // JNI native メソッド宣言
     private external fun nativeLoadModel(modelPath: String): Boolean
     private external fun nativeUnloadModel()

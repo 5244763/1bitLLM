@@ -136,12 +136,12 @@ fun ChatScreen(
 
                 // フェーズ2: モデルをメモリにロード（loadingPhase = "loading" に切り替わる）
                 viewModel.onFileCopyEnd()
-                val loadOk = viewModel.loadModelAfterCopy()
+                val loadResult = viewModel.loadModelAfterCopy()
 
-                if (loadOk) {
-                    snackbarHostState.showSnackbar("success:モデル準備完了！チャットを開始できます")
-                } else {
-                    snackbarHostState.showSnackbar("error:モデルのロードに失敗しました")
+                when (loadResult) {
+                    "native" -> snackbarHostState.showSnackbar("success:モデル準備完了！（ネイティブ推論）")
+                    "mock" -> snackbarHostState.showSnackbar("error:ネイティブロード失敗。デモモードで動作します。ファイル形式を確認してください。")
+                    else -> snackbarHostState.showSnackbar("error:モデルのロードに失敗しました")
                 }
             }
         }

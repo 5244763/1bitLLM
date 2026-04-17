@@ -184,4 +184,9 @@ class EngineManager(private val context: Context) {
      * モデルがロード済みかを返す。
      */
     fun isLoaded(): Boolean = engine.isModelLoaded()
+
+    /** ネイティブ推論が有効か（モックフォールバックではないか） */
+    fun isNativeInference(): Boolean {
+        return (engine as? LlamaBridge)?.isUsingNativeInference() ?: false
+    }
 }
