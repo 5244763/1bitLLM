@@ -34,10 +34,15 @@ class EngineManager(private val context: Context) {
     }
 
     /**
-     * モデルファイルの保存ディレクトリ (アプリ内部ストレージ)
+     * モデルファイルの保存ディレクトリ (アプリ外部ストレージ: adb push で直接書き込み可能)
+     * パス: /sdcard/Android/data/com.example.onbitllm/files/models/
      */
     private val modelsDir: File
-        get() = File(context.filesDir, "models")
+        get() {
+            val dir = File(context.getExternalFilesDir(null), "models")
+            if (!dir.exists()) dir.mkdirs()
+            return dir
+        }
 
     /**
      * 指定モデルの GGUF ファイルパスを返す。
