@@ -8,6 +8,9 @@ android {
     namespace = "com.example.onbitllm"
     compileSdk = 35
 
+    // Sprint 6: NDK バージョン指定
+    ndkVersion = "27.0.12077973"
+
     defaultConfig {
         applicationId = "com.example.onbitllm"
         minSdk = 31
@@ -16,6 +19,45 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Sprint 6: NDK ビルド設定
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++17"
+                // llama.cpp ソースディレクトリを渡す
+                arguments += "-DLLAMA_SRC_DIR=${rootDir}/../llama_cpp_src"
+                arguments += "-DCMAKE_BUILD_TYPE=Release"
+                arguments += "-DBUILD_SHARED_LIBS=OFF"
+                arguments += "-DLLAMA_BUILD_TESTS=OFF"
+                arguments += "-DLLAMA_BUILD_EXAMPLES=OFF"
+                arguments += "-DLLAMA_BUILD_SERVER=OFF"
+                arguments += "-DLLAMA_BUILD_COMMON=ON"
+                arguments += "-DLLAMA_OPENSSL=OFF"
+                arguments += "-DGGML_CUDA=OFF"
+                arguments += "-DGGML_VULKAN=OFF"
+                arguments += "-DGGML_METAL=OFF"
+                arguments += "-DGGML_OPENCL=OFF"
+                arguments += "-DGGML_HIP=OFF"
+                arguments += "-DGGML_SYCL=OFF"
+                arguments += "-DGGML_BLAS=OFF"
+                arguments += "-DGGML_LLAMAFILE=OFF"
+                arguments += "-DGGML_NATIVE=OFF"
+                arguments += "-DGGML_BACKEND_DL=OFF"
+                arguments += "-DGGML_CPU_KLEIDIAI=OFF"
+                arguments += "-DGGML_OPENMP=OFF"
+            }
+        }
+    }
+
+    // Sprint 6: externalNativeBuild を有効化
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {
@@ -37,25 +79,6 @@ android {
     buildFeatures {
         compose = true
     }
-
-    // Sprint 5: NDK / CMake セットアップ（現環境にNDKがない場合はコメントアウトのままでOK）
-    // NDK をインストール後、以下のブロックを有効化する:
-    //   Android Studio > SDK Manager > SDK Tools > NDK (Side by side) をインストール
-    // externalNativeBuild {
-    //     cmake {
-    //         path = file("src/main/cpp/CMakeLists.txt")
-    //         version = "3.22.1"
-    //     }
-    // }
-    // defaultConfig {
-    //     ...（既存のdefaultConfigブロック内に追加）
-    //     externalNativeBuild {
-    //         cmake {
-    //             cppFlags += "-std=c++17"
-    //             abiFilters += listOf("arm64-v8a", "x86_64")
-    //         }
-    //     }
-    // }
 }
 
 dependencies {

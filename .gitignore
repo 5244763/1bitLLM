@@ -16,3 +16,4 @@ Thumbs.db
 # Secrets
 *.keystore
 *.jks
+llama_cpp_src/
