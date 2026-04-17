@@ -12,18 +12,26 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -50,6 +59,7 @@ import com.example.onbitllm.ui.components.ImageSourceBottomSheet
 import com.example.onbitllm.ui.components.ModelSelectorDialog
 import com.example.onbitllm.ui.components.RecordingInputBar
 import com.example.onbitllm.ui.components.ResourceMonitorOverlay
+import com.example.onbitllm.ui.components.SessionListSheet
 import com.example.onbitllm.ui.theme.AccentCyan
 import com.example.onbitllm.ui.theme.BackgroundDark
 import com.example.onbitllm.ui.theme.TextMuted
@@ -63,6 +73,12 @@ import java.io.File
  * Sprint 5:
  * - ChatViewModel を外部から受け取る（MainActivity が Factory で生成したインスタンス）
  * - モデルファイル欠如時にウェルカムメッセージでadb pushパスを案内
+ *
+ * Sprint 7:
+ * - Snackbar のカスタマイズ（背景・文字色）
+ * - ファイルコピー中ダイアログ表示
+ * - セッション一覧サイドシート
+ * - isLoadingModel を ChatBubble に渡す
  */
 @Composable
 fun ChatScreen(
@@ -79,6 +95,7 @@ fun ChatScreen(
     var showModelSelector by remember { mutableStateOf(false) }
     var showResourceMonitor by remember { mutableStateOf(false) }
     var showImageSourceSheet by remember { mutableStateOf(false) }
+    var showSessionList by remember { mutableStateOf(false) }
 
     // カメラ撮影用: 一時ファイルのURI
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -102,15 +119,18 @@ fun ChatScreen(
                 val modelsDir = File(context.filesDir, "models")
                 modelsDir.mkdirs()
                 val destFile = File(modelsDir, fileName)
+                viewModel.onFileCopyStart()
                 try {
                     context.contentResolver.openInputStream(it)?.use { input ->
                         destFile.outputStream().use { output ->
                             input.copyTo(output)
                         }
                     }
-                    snackbarHostState.showSnackbar("Model loaded: $fileName")
+                    viewModel.onFileCopyEnd()
+                    snackbarHostState.showSnackbar("success:Model loaded: $fileName")
                 } catch (e: Exception) {
-                    snackbarHostState.showSnackbar("Failed: ${e.message}")
+                    viewModel.onFileCopyEnd()
+                    snackbarHostState.showSnackbar("error:Failed: ${e.message}")
                 }
             }
         }
@@ -136,7 +156,7 @@ fun ChatScreen(
             pendingCameraLaunch = true
         } else {
             scope.launch {
-                snackbarHostState.showSnackbar("カメラ権限が必要です。設定から許可してください。")
+                snackbarHostState.showSnackbar("error:カメラ権限が必要です。設定から許可してください。")
             }
         }
     }
@@ -148,7 +168,7 @@ fun ChatScreen(
             viewModel.startRecording(context)
         } else {
             scope.launch {
-                snackbarHostState.showSnackbar("マイク権限が必要です。設定から許可してください。")
+                snackbarHostState.showSnackbar("error:マイク権限が必要です。設定から許可してください。")
             }
         }
     }
@@ -201,7 +221,8 @@ fun ChatScreen(
             ChatHeader(
                 selectedModel = uiState.selectedModel,
                 onModelSelectorClick = { showModelSelector = true },
-                onResourceMonitorClick = { showResourceMonitor = true }
+                onResourceMonitorClick = { showResourceMonitor = true },
+                onSessionListClick = { showSessionList = true }
             )
 
             // チャットエリア
@@ -227,7 +248,12 @@ fun ChatScreen(
                     items = uiState.messages,
                     key = { it.id }
                 ) { message ->
-                    ChatBubble(message = message)
+                    // 最後のAIメッセージがストリーミング中 + モデルロード中の場合のみフラグを渡す
+                    val isLastMsg = message == uiState.messages.lastOrNull()
+                    ChatBubble(
+                        message = message,
+                        isLoadingModel = isLastMsg && uiState.isLoadingModel
+                    )
                 }
             }
 
@@ -279,11 +305,32 @@ fun ChatScreen(
             }
         }
 
-        // Snackbar（権限拒否時メッセージ）
+        // Snackbar（カスタムカラー）
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
-        )
+        ) { snackbarData ->
+            val message = snackbarData.visuals.message
+            // プレフィックスで成功/エラーを判定
+            val isSuccess = message.startsWith("success:")
+            val isError = message.startsWith("error:")
+            val displayMessage = when {
+                isSuccess -> message.removePrefix("success:")
+                isError -> message.removePrefix("error:")
+                else -> message
+            }
+            val bgColor = when {
+                isSuccess -> Color(0xFF1B7A5A)   // 緑系
+                isError -> Color(0xFF8B2020)     // 赤系
+                else -> Color(0xFF00897B)        // AccentCyan 系（デフォルト）
+            }
+            Snackbar(
+                snackbarData = snackbarData,
+                containerColor = bgColor,
+                contentColor = Color(0xFFEEEEFF),
+                modifier = Modifier.padding(8.dp)
+            )
+        }
 
         // モデル選択ダイアログ
         if (showModelSelector) {
@@ -323,6 +370,56 @@ fun ChatScreen(
                 selectedModel = uiState.selectedModel,
                 onDismiss = { showResourceMonitor = false },
                 engineProvider = { viewModel.getEngine() }
+            )
+        }
+
+        // ファイルコピー中ダイアログ
+        if (uiState.isCopyingFile) {
+            AlertDialog(
+                onDismissRequest = { /* キャンセル不可 */ },
+                title = {
+                    Text(
+                        text = "モデルファイルをコピー中...",
+                        color = Color(0xFFEEEEFF)
+                    )
+                },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = AccentCyan,
+                            strokeWidth = 3.dp
+                        )
+                        Text(
+                            text = "しばらくお待ちください",
+                            color = Color(0xFFAAAAAA),
+                            fontSize = 13.sp
+                        )
+                    }
+                },
+                confirmButton = {},
+                containerColor = Color(0xFF1A1A3A)
+            )
+        }
+
+        // セッション一覧サイドシート
+        if (showSessionList) {
+            SessionListSheet(
+                sessions = uiState.allSessions,
+                currentSessionId = uiState.currentSessionId,
+                onSessionClick = { sessionId ->
+                    viewModel.switchToSession(sessionId)
+                },
+                onSessionDelete = { sessionId ->
+                    viewModel.deleteSession(sessionId)
+                },
+                onNewSession = {
+                    viewModel.createNewSession()
+                },
+                onDismiss = { showSessionList = false }
             )
         }
     }

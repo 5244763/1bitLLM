@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -19,14 +20,18 @@ import com.example.onbitllm.ui.theme.TextSecondary
 
 /**
  * チャット画面ヘッダー
+ * 左端: セッション一覧ボタン（≡）
  * 左: モデル選択ドロップダウン
  * 右: リソースモニターボタン
+ *
+ * Sprint 7: ハンバーガーメニューボタンを左端に追加
  */
 @Composable
 fun ChatHeader(
     selectedModel: LlmModel,
     onModelSelectorClick: () -> Unit,
     onResourceMonitorClick: () -> Unit,
+    onSessionListClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -37,11 +42,24 @@ fun ChatHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 左: モデル選択ボタン
-        ModelSelectorButton(
-            selectedModel = selectedModel,
-            onClick = onModelSelectorClick
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 左端: セッション一覧ボタン（ハンバーガーメニュー）
+            IconButton(onClick = onSessionListClick) {
+                Icon(
+                    imageVector = Icons.Default.Menu,
+                    contentDescription = "セッション一覧",
+                    tint = TextSecondary
+                )
+            }
+
+            // モデル選択ボタン
+            ModelSelectorButton(
+                selectedModel = selectedModel,
+                onClick = onModelSelectorClick
+            )
+        }
 
         // 右: リソースモニターボタン
         IconButton(onClick = onResourceMonitorClick) {

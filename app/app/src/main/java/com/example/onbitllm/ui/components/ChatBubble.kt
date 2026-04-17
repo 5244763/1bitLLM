@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,10 +52,12 @@ import com.example.onbitllm.ui.theme.UserBubble
  * AI: 左寄せグレー系、下部に応答時間・速度を表示
  *
  * Sprint 3: 画像サムネイル表示 + 音声入力ラベル対応
+ * Sprint 7: isLoadingModel 時にモデルロード中インジケーターを表示
  */
 @Composable
 fun ChatBubble(
     message: ChatMessage,
+    isLoadingModel: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == MessageRole.USER
@@ -68,7 +71,7 @@ fun ChatBubble(
         if (isUser) {
             UserBubbleContent(message)
         } else {
-            AiBubbleContent(message)
+            AiBubbleContent(message, isLoadingModel)
         }
     }
 }
@@ -149,7 +152,7 @@ private fun UserBubbleContent(message: ChatMessage) {
 }
 
 @Composable
-private fun AiBubbleContent(message: ChatMessage) {
+private fun AiBubbleContent(message: ChatMessage, isLoadingModel: Boolean = false) {
     Column(
         modifier = Modifier.widthIn(max = 300.dp)
     ) {
@@ -166,7 +169,10 @@ private fun AiBubbleContent(message: ChatMessage) {
                 .background(AiBubble)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            if (message.isStreaming && message.content.isEmpty()) {
+            if (message.isStreaming && message.content.isEmpty() && isLoadingModel) {
+                // モデルロード中: プログレスインジケーター + テキスト
+                ModelLoadingIndicator()
+            } else if (message.isStreaming && message.content.isEmpty()) {
                 // コンテンツなしストリーミング中: ドット点滅アニメーション
                 StreamingIndicator()
             } else {
@@ -222,6 +228,29 @@ private fun ResponseMetaInfo(
             text = "${tokStr} tok/s",
             color = TextMuted,
             fontSize = 11.sp
+        )
+    }
+}
+
+/**
+ * モデルロード中のインジケーター表示
+ */
+@Composable
+private fun ModelLoadingIndicator() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(vertical = 4.dp)
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(16.dp),
+            color = AccentCyan,
+            strokeWidth = 2.dp
+        )
+        Text(
+            text = "モデルを読み込み中...",
+            color = TextMuted,
+            fontSize = 13.sp
         )
     }
 }

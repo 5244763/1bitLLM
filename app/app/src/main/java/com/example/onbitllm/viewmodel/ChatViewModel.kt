@@ -10,9 +10,11 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.onbitllm.engine.EngineManager
 import com.example.onbitllm.model.ChatMessage
+import com.example.onbitllm.model.ChatSession
 import com.example.onbitllm.model.IdGenerator
 import com.example.onbitllm.model.LlmModel
 import com.example.onbitllm.model.MessageRole
+import com.example.onbitllm.repository.ChatRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +39,14 @@ data class ChatUiState(
     val audioLevel: Float = 0f,
     // Sprint 5: モデルファイルが存在しないことを示すフラグ
     val modelFilesMissing: Boolean = false,
-    val missingModelPath: String = ""
+    val missingModelPath: String = "",
+    // Sprint 7: モデルロード中フラグ
+    val isLoadingModel: Boolean = false,
+    // Sprint 7: ファイルコピー中フラグ
+    val isCopyingFile: Boolean = false,
+    // Sprint 7: セッション管理
+    val currentSessionId: String? = null,
+    val allSessions: List<ChatSession> = emptyList()
 )
 
 /**
@@ -48,8 +57,17 @@ data class ChatUiState(
  * - generateMockResponse() を generateResponse() にリネーム
  * - 初回メッセージ送信時にモデルをロード（遅延ロード）
  * - モデル切り替え時に旧モデルをアンロード → 新モデルを次回使用時にロード
+ *
+ * Sprint 7:
+ * - isLoadingModel: モデルロード中フラグ（吹き出しに表示）
+ * - isCopyingFile: ファイルコピー中フラグ（ダイアログ表示）
+ * - ChatRepository 経由でセッション永続化
+ * - セッション一覧・切り替え・削除
  */
-class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
+class ChatViewModel(
+    private val engineManager: EngineManager,
+    private val repository: ChatRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -60,6 +78,192 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
     // Sprint 3: AudioRecord インスタンス
     private var audioRecord: AudioRecord? = null
     private var recordingFile: File? = null
+
+    init {
+        // 起動時にセッション一覧を読み込み、最後のセッションを復元
+        viewModelScope.launch {
+            loadSessionsAndRestore()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Sprint 7: セッション管理
+    // -------------------------------------------------------------------------
+
+    /**
+     * 起動時: セッション一覧を読み込み、前回のセッションを復元する
+     */
+    private suspend fun loadSessionsAndRestore() {
+        val sessions = repository.loadAllSessions()
+        val lastId = repository.loadCurrentSessionId()
+        val lastSession = if (lastId != null) sessions.firstOrNull { it.id == lastId } else sessions.firstOrNull()
+
+        if (lastSession != null) {
+            val messages = repository.fromJsonMessages(lastSession.messages)
+            val model = LlmModel.values().firstOrNull { it.displayName == lastSession.modelName }
+                ?: LlmModel.BONSAI_8B
+            _uiState.update {
+                it.copy(
+                    messages = messages,
+                    selectedModel = model,
+                    currentSessionId = lastSession.id,
+                    allSessions = sessions
+                )
+            }
+        } else {
+            _uiState.update { it.copy(allSessions = sessions) }
+        }
+    }
+
+    /**
+     * 全セッション一覧を再読み込みしてStateを更新
+     */
+    private suspend fun refreshSessions() {
+        val sessions = repository.loadAllSessions()
+        _uiState.update { it.copy(allSessions = sessions) }
+    }
+
+    /**
+     * 現在のセッションを保存する
+     */
+    private suspend fun saveCurrentSession() {
+        val state = _uiState.value
+        if (state.messages.isEmpty()) return
+
+        val sessionId = state.currentSessionId
+        val title = repository.generateTitle(state.messages)
+        val jsonMessages = repository.toJsonMessages(state.messages)
+
+        if (sessionId != null) {
+            // 既存セッションを更新
+            val existing = repository.loadSession(sessionId)
+            val updated = existing?.copy(
+                title = title,
+                messages = jsonMessages,
+                updatedAt = System.currentTimeMillis()
+            ) ?: ChatSession(
+                id = sessionId,
+                title = title,
+                modelName = state.selectedModel.displayName,
+                messages = jsonMessages
+            )
+            repository.saveSession(updated)
+        } else {
+            // 新規セッションを作成
+            val newSession = ChatSession(
+                title = title,
+                modelName = state.selectedModel.displayName,
+                messages = jsonMessages
+            )
+            repository.saveSession(newSession)
+            repository.saveCurrentSessionId(newSession.id)
+            _uiState.update { it.copy(currentSessionId = newSession.id) }
+        }
+        refreshSessions()
+    }
+
+    /**
+     * 新しいセッションを作成（「新しい会話」ボタン）
+     */
+    fun createNewSession() {
+        recordingTimerJob?.cancel()
+        recordingTimerJob = null
+        stopAudioRecord()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            engineManager.unloadCurrentModel()
+        }
+
+        _uiState.update {
+            it.copy(
+                messages = emptyList(),
+                inputText = "",
+                isGenerating = false,
+                attachedImageUri = null,
+                isRecording = false,
+                recordingElapsedSeconds = 0,
+                audioLevel = 0f,
+                isLoadingModel = false,
+                currentSessionId = null
+            )
+        }
+    }
+
+    /**
+     * 既存セッションに切り替える
+     */
+    fun switchToSession(sessionId: String) {
+        viewModelScope.launch {
+            val session = repository.loadSession(sessionId) ?: return@launch
+            val messages = repository.fromJsonMessages(session.messages)
+            val model = LlmModel.values().firstOrNull { it.displayName == session.modelName }
+                ?: LlmModel.BONSAI_8B
+
+            // モデルが変わる場合はアンロード
+            if (model != _uiState.value.selectedModel) {
+                launch(Dispatchers.IO) { engineManager.unloadCurrentModel() }
+            }
+
+            repository.saveCurrentSessionId(sessionId)
+            _uiState.update {
+                it.copy(
+                    messages = messages,
+                    selectedModel = model,
+                    inputText = "",
+                    isGenerating = false,
+                    attachedImageUri = null,
+                    isRecording = false,
+                    recordingElapsedSeconds = 0,
+                    audioLevel = 0f,
+                    isLoadingModel = false,
+                    currentSessionId = sessionId
+                )
+            }
+        }
+    }
+
+    /**
+     * セッションを削除する
+     */
+    fun deleteSession(sessionId: String) {
+        viewModelScope.launch {
+            repository.deleteSession(sessionId)
+            // 現在のセッションが削除された場合は新規セッションに切り替え
+            if (_uiState.value.currentSessionId == sessionId) {
+                val sessions = repository.loadAllSessions()
+                val nextSession = sessions.firstOrNull()
+                if (nextSession != null) {
+                    switchToSession(nextSession.id)
+                } else {
+                    createNewSession()
+                }
+            } else {
+                refreshSessions()
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // ファイルコピー中フラグの管理
+    // -------------------------------------------------------------------------
+
+    /**
+     * ファイルコピー開始を通知
+     */
+    fun onFileCopyStart() {
+        _uiState.update { it.copy(isCopyingFile = true) }
+    }
+
+    /**
+     * ファイルコピー完了を通知
+     */
+    fun onFileCopyEnd() {
+        _uiState.update { it.copy(isCopyingFile = false) }
+    }
+
+    // -------------------------------------------------------------------------
+    // テキスト入力
+    // -------------------------------------------------------------------------
 
     /**
      * テキスト入力の更新
@@ -90,6 +294,8 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
         }
 
         viewModelScope.launch {
+            // メッセージ送信後に保存
+            saveCurrentSession()
             generateResponse(inputText, currentState.selectedModel)
         }
     }
@@ -102,9 +308,14 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
         val startTime = System.currentTimeMillis()
 
         try {
-            // モデルが未ロードなら遅延ロード
+            // モデルが未ロードなら遅延ロード（ローディング表示）
+            if (!engineManager.isLoaded()) {
+                _uiState.update { it.copy(isLoadingModel = true) }
+            }
             engineManager.loadModelIfNeeded(model)
+            _uiState.update { it.copy(isLoadingModel = false) }
         } catch (e: Exception) {
+            _uiState.update { it.copy(isLoadingModel = false) }
             // ロード失敗: エラーメッセージを表示して終了
             val errorMsg = ChatMessage(
                 role = MessageRole.ASSISTANT,
@@ -186,6 +397,9 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
                 isGenerating = false
             )
         }
+
+        // 応答完了後に保存
+        saveCurrentSession()
     }
 
     /**
@@ -210,6 +424,7 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
     /**
      * モデルを切り替え、チャット履歴をリセット。
      * 旧モデルをアンロードし、次回メッセージ送信時に新モデルをロードする。
+     * モデル切り替え時は新しいセッションを自動作成。
      */
     fun selectModel(model: LlmModel) {
         recordingTimerJob?.cancel()
@@ -232,7 +447,9 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
                 recordingElapsedSeconds = 0,
                 audioLevel = 0f,
                 modelFilesMissing = false,
-                missingModelPath = ""
+                missingModelPath = "",
+                isLoadingModel = false,
+                currentSessionId = null  // 新しいセッションとして扱う
             )
         }
     }
@@ -387,6 +604,7 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
 
         val model = _uiState.value.selectedModel
         viewModelScope.launch {
+            saveCurrentSession()
             generateResponse("[音声入力]", model)
         }
     }
@@ -429,6 +647,7 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
 
         val imagePath = imageUri?.path
         viewModelScope.launch {
+            saveCurrentSession()
             if (imagePath != null) {
                 generateResponseWithImage(displayText, imagePath, currentState.selectedModel)
             } else {
@@ -447,7 +666,11 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
     ) {
         val startTime = System.currentTimeMillis()
 
+        if (!engineManager.isLoaded()) {
+            _uiState.update { it.copy(isLoadingModel = true) }
+        }
         engineManager.loadModelIfNeeded(model)
+        _uiState.update { it.copy(isLoadingModel = false) }
 
         val streamingMessageId = IdGenerator.next()
         val streamingMessage = ChatMessage(
@@ -509,6 +732,8 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
                 isGenerating = false
             )
         }
+
+        saveCurrentSession()
     }
 
     override fun onCleared() {
@@ -526,7 +751,8 @@ class ChatViewModel(private val engineManager: EngineManager) : ViewModel() {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val engineManager = EngineManager(context.applicationContext)
-            return ChatViewModel(engineManager) as T
+            val repository = ChatRepository(context.applicationContext)
+            return ChatViewModel(engineManager, repository) as T
         }
     }
 }
